@@ -1,0 +1,250 @@
+#!/bin/bash
+
+#Inspired by: https://github.com/akusei/pushover-bash
+
+set -o errexit
+set -o nounset
+
+readonly API_URL="https://api.pushover.net/1/messages.json"
+
+# Default values can be defined here
+#==================================================================================
+user_key="YOUR_USER_KEY"
+#api_token=
+#device=
+#url=
+#url_title=
+#priority=
+#title=
+#Define separate APIs here if you have different apps/channels - can also be defined in CONFIG_FILE
+#Define list of channels and corresponding list of API keys. 
+channels=("alert"
+          "backup"
+          "docker")
+channel_apikeys=("YOUR_CHANNEL_KEY_ALERT"
+                 "YOUR_CHANNEL_KEY_BACKUP" 
+                 "YOUR_CHANNEL_KEY_DOCKER")
+#(Optional) set default channel name
+channel_name="alert"
+
+showHelp()
+{
+        local script=`basename "$0"`
+        echo "Push notifications to your Android, iOS, or desktop devices"
+        echo
+        echo "NOTE: This script requires an account at http://www.pushover.net"
+        echo
+        echo "usage: ${script} <-c|--channel app_name> <-t|--token apikey> <-u|--user userkey> <-m|--message message> [options]"
+        echo
+        echo "  -c,  --channel APP_NAME    The pushover.net application name (as defined in script)"
+        echo "  -t,  --token APIKEY        The pushover.net API Key for your application (not needed if supplying defined channel)"
+        echo "  -u,  --user USERKEY        Your pushover.net user key"
+        echo "  -m,  --message MESSAGE     The message to send; supports HTML formatting"
+        echo "  -a,  --attachment filename The Picture you want to send"
+        echo "  -T,  --title TITLE         Title of the message"
+        echo "  -d,  --device NAME         Comma seperated list of devices to receive message"
+        echo "  -U,  --url URL             URL to send with message"
+        echo "       --url-title URLTITLE  Title of the URL"
+        echo "  -p,  --priority PRIORITY   Priority of the message"
+        echo "                               -2 - no notification/alert"
+        echo "                               -1 - quiet notification"
+        echo "                                0 - normal priority"
+        echo "                                1 - bypass the user's quiet hours"
+        echo "                                2 - require confirmation from the user"
+        echo "  -s,  --sound SOUND         Notification sound to play with message"
+        echo "                               pushover - Pushover (default)"
+        echo "                               bike - Bike"
+        echo "                               bugle - Bugle"
+        echo "                               cashregister - Cash Register"
+        echo "                               classical - Classical"
+        echo "                               cosmic - Cosmic"
+        echo "                               falling - Falling"
+        echo "                               gamelan - Gamelan"
+        echo "                               incoming - Incoming"
+        echo "                               intermission - Intermission"
+        echo "                               magic - Magic"
+        echo "                               mechanical - Mechanical"
+        echo "                               pianobar - Piano Bar"
+        echo "                               siren - Siren"
+        echo "                               spacealarm - Space Alarm"
+        echo "                               tugboat - Tug Boat"
+        echo "                               alien - Alien Alarm (long)"
+        echo "                               climb - Climb (long)"
+        echo "                               persistent - Persistent (long)"
+        echo "                               echo - Pushover Echo (long)"
+        echo "                               updown - Up Down (long)"
+        echo "                               none - None (silent)"
+        echo
+        if [ ! -z "${channels:-}" ]; then
+            echo "CHANNELS:"
+            echo "  These channels have been defined in the script:"
+            printf "%s, " "${channels[@]}"
+            echo
+            echo
+        fi
+        echo "NOTES:"
+        echo "  - APIKEYs are created within pushover web interface for different apps, equivalent to Slack channels."
+        echo "  - You can define multiple channel's APIKEYs inside the script or config file, if doing this the '--token' APIKEY"
+        echo "    does not need to be supplied."
+        echo
+        echo "EXAMPLES:"
+        echo
+        echo "  ${script} -c alerts -u yyyyyyyyyy -m \"This is a test\""
+        echo "  Sends a simple \"This is a test\" message to app/channel 'alerts'."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\""
+        echo "  Sends a simple \"This is a test\" message to all devices."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\" -T \"Test Title\""
+        echo "  Sends a simple \"This is a test\" message with the title \"Test Title\" to all devices."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\" -d \"Phone,Home Desktop\""
+        echo "  Sends a simple \"This is a test\" message to the devices named \"Phone\" and \"Home Desktop\"."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\" -U \"http://www.google.com\" --url-title Google"
+        echo "  Sends a simple \"This is a test\" message to all devices that contains a link to www.google.com titled \"Google\"."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\" -p 1"
+        echo "  Sends a simple \"This is a test\" high priority message to all devices."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test\" -s bike"
+        echo "  Sends a simple \"This is a test\" message to all devices that uses the sound of a bike bell as the notification sound."
+        echo
+        echo "  ${script} -t xxxxxxxxxx -u yyyyyyyyyy -m \"This is a test Pic\" -a /path/to/pic.jpg"
+        echo "  Sends a simple \"This is a test Pic\" message to all devices and send the Picture with the message."
+        echo
+}
+
+curl --version > /dev/null 2>&1 || { echo "This script requires curl; aborting."; echo; exit 1; }
+
+if [ ! -z "${DEFAULT_CONFIG:-}" ]; then
+  source ${DEFAULT_CONFIG}
+fi
+if [ ! -z "${USER_OVERRIDE:-}" ]; then
+  source ${USER_OVERRIDE}
+fi
+
+while [ $# -gt 0 ]
+do
+  case "${1:-}" in
+    -c|--channel)
+      channel_name="${2:-}"
+      shift
+      ;;
+
+    -t|--token)
+      api_token="${2:-}"
+      shift
+      ;;
+
+    -u|--user)
+      user_key="${2:-}"
+      shift
+      ;;
+
+    -m|--message)
+      message="${2:-}"
+      shift
+      ;;
+
+    -a|--attachment)
+      attachment="${2:-}"
+      shift
+      ;;
+
+    -T|--title)
+      title="${2:-}"
+      shift
+      ;;
+
+    -d|--device)
+      device="${2:-}"
+      shift
+      ;;
+
+    -U|--url)
+      url="${2:-}"
+      shift
+      ;;
+
+    --url-title)
+      url_title="${2:-}"
+      shift
+      ;;
+
+    -p|--priority)
+      priority="${2:-}"
+      shift
+      ;;
+
+    -s|--sound)
+      sound="${2:-}"
+      shift
+      ;;
+
+    -h|--help)
+      showHelp
+      exit
+      ;;
+
+    *)
+      ;;
+  esac
+
+  shift
+done
+
+
+if [ -z "${api_token:-}" ] && [ -z "${channel_name:-}" ]; then
+  echo "-t|--token, or -c|--channel must be set"
+  exit 1
+fi
+
+if [ -z "${user_key:-}" ]; then
+  echo "-u|--user must be set"
+  exit 1
+fi
+
+if [ -z "${message:-}" ]; then
+  echo "-m|--message must be set"
+  exit 1
+fi
+
+if [ ! -z "${attachment:-}" ] && [ ! -f "${attachment}" ]; then
+  echo "${attachment} not found"
+  exit 1
+fi
+
+# Match supplied channel_name with channel_api list to set api_token if no -t api_key specified
+if [ -z "${api_token:-}" ]; then    
+    for i in "${!channels[@]}"; do
+        if [[ "${channels[i]}" == "${channel_name}" ]]; then
+            api_token="${channel_apikeys[i]}"
+        fi
+    done
+fi
+  
+
+if [ -z "${attachment:-}" ]; then
+  json="{\"token\":\"${api_token}\",\"user\":\"${user_key}\",\"message\":\"${message}\""
+  if [ "${device:-}" ]; then json="${json},\"device\":\"${device}\""; fi
+  if [ "${title:-}" ]; then json="${json},\"title\":\"${title}\""; fi
+  if [ "${url:-}" ]; then json="${json},\"url\":\"${url}\""; fi
+  if [ "${url_title:-}" ]; then json="${json},\"url_title\":\"${url_title}\""; fi
+  if [ "${priority:-}" ]; then json="${json},\"priority\":${priority}"; fi
+  if [ "${sound:-}" ]; then json="${json},\"sound\":\"${sound}\""; fi
+  json="${json}}"
+
+  curl -s -o /dev/null -H "Content-Type: application/json" -d "${json}" "${API_URL}" > /dev/null 2>&1
+else
+  curl -s -o /dev/null \
+    --form-string "token=${api_token}" \
+    --form-string "user=${user_key}" \
+    --form-string "message=${message}" \
+    --form "attachment=@${attachment}" \
+    ${priority:+ --form-string "priority=${priority}"} \
+    ${sound:+ --form-string "sound=${sound}"} \
+    ${device:+ --form-string "device=${device}"} \
+    ${title:+ --form-string "title=${title}"} \
+    "${API_URL}" > /dev/null 2>&1
+fi
