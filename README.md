@@ -4,7 +4,7 @@ Script to send Pushover notifications from command line
 Inspired by: https://github.com/akusei/pushover-bash
 
 * Download to location in $PATH ...
-`wget https://raw.githubusercontent.com/danteali/Pushbullet/master/pushbullet -O /usr/bin/pushbullet`
+`wget https://raw.githubusercontent.com/danteali/Pushover/master/pushover -O /usr/bin/pushover`
 
 * Edit script and add your API key - get from Pushbullet website
 * Add your own user_key to the script
